@@ -1,18 +1,21 @@
 "use client"
 import { useState, useEffect } from 'react'
+import { getGrafanaDashboardUrl, getGrafanaBaseUrl } from '../config/dashboard-config'
 
 interface GrafanaDashboardProps {
   dashboardUrl?: string
   height?: string
   width?: string
   className?: string
+  showLink?: boolean
 }
 
 export default function GrafanaDashboard({ 
-  dashboardUrl = "http://165.227.40.179:3000/d/llm-worker-metrics/llm-worker-metrics?orgId=1&from=now-5m&to=now&timezone=browser&var-component=VllmWorker&var-endpoint=load_metrics&refresh=2s&kiosk", 
+  dashboardUrl = getGrafanaDashboardUrl(true), 
   height = "600px",
   width = "100%",
-  className = ""
+  className = "",
+  showLink = true
 }: GrafanaDashboardProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
@@ -27,8 +30,46 @@ export default function GrafanaDashboard({
     setHasError(true)
   }
 
+  const openInNewTab = () => {
+    window.open(getGrafanaDashboardUrl(false), '_blank')
+  }
+
   return (
     <div className={`relative ${className}`}>
+      {/* Header with link */}
+      {showLink && (
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-medium text-gray-900">Real-time Metrics</h3>
+            <span className="text-sm text-gray-500">
+              (Refreshes every 2 seconds)
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openInNewTab}
+              className="inline-flex items-center gap-1 px-3 py-1 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Open in Grafana
+            </button>
+            {/* <a
+              href={getGrafanaBaseUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-3 py-1 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-md transition-colors duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              Grafana Home
+            </a> */}
+          </div>
+        </div>
+      )}
+
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg z-10">
           <div className="text-center">
@@ -47,20 +88,31 @@ export default function GrafanaDashboard({
           </div>
           <h3 className="text-lg font-medium text-red-800 mb-2">Dashboard Unavailable</h3>
           <p className="text-red-600 mb-4">
-            Unable to load Grafana dashboard. Please ensure Grafana is accessible at {dashboardUrl}.
+            Unable to load Grafana dashboard. Please ensure Grafana is accessible.
           </p>
           <div className="text-sm text-gray-600 mb-4">
-            <p>Dashboard URL: <code className="bg-gray-200 px-2 py-1 rounded text-xs">{dashboardUrl}</code></p>
+            <p>Dashboard URL: <code className="bg-gray-200 px-2 py-1 rounded text-xs break-all">{dashboardUrl}</code></p>
+            <p className="mt-2">Grafana Home: <code className="bg-gray-200 px-2 py-1 rounded text-xs">{getGrafanaBaseUrl()}</code></p>
           </div>
-          <button 
-            onClick={() => {
-              setHasError(false)
-              setIsLoading(true)
-            }}
-            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors duration-200"
-          >
-            Retry
-          </button>
+          <div className="flex gap-2 justify-center">
+            <button 
+              onClick={() => {
+                setHasError(false)
+                setIsLoading(true)
+              }}
+              className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors duration-200"
+            >
+              Retry
+            </button>
+            <a
+              href={getGrafanaBaseUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-200"
+            >
+              Open Grafana
+            </a>
+          </div>
         </div>
       )}
 

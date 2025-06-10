@@ -275,20 +275,23 @@ export default function Home() {
                   </div>
                 </div>
 
-                {!useRandomQuestions && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Custom Test Message
-                    </label>
-                    <textarea
-                      value={testMessage}
-                      onChange={(e) => setTestMessage(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      rows={3}
-                      placeholder="Enter your test message..."
-                    />
-                  </div>
-                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Custom Test Message
+                  </label>
+                  <textarea
+                    value={testMessage}
+                    onChange={(e) => setTestMessage(e.target.value)}
+                    disabled={useRandomQuestions}
+                    className={`w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      useRandomQuestions 
+                        ? 'bg-gray-100 text-gray-500 cursor-not-allowed' 
+                        : 'bg-white text-gray-900'
+                    }`}
+                    rows={3}
+                    placeholder={useRandomQuestions ? "Disabled when using diverse test questions" : "Enter your test message..."}
+                  />
+                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -468,27 +471,27 @@ export default function Home() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <div className="text-gray-600">Total Requests</div>
-                    <div className="font-semibold text-gray-400">-</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Success Rate</div>
-                    <div className="font-semibold text-gray-400">-</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Avg Latency</div>
-                    <div className="font-semibold text-gray-400">-</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Requests/sec</div>
-                    <div className="font-semibold text-gray-400">-</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Min Latency</div>
-                    <div className="font-semibold text-gray-400">-</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Max Latency</div>
-                    <div className="font-semibold text-gray-400">-</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                 </div>
               )}
