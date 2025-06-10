@@ -1,103 +1,568 @@
-import Image from "next/image";
+"use client"
+import { useState, useRef, useEffect } from "react"
+import { useChatCompletion, ChatMessage } from "../hooks/useChatCompletion"
+import { getQuestionByIndex, testQuestions } from "../data/testQuestions"
+
+interface TestResult {
+  id: string
+  timestamp: number
+  duration: number
+  success: boolean
+  error?: string
+  response?: string
+  requestSize: number
+  question: string
+}
+
+interface TestStats {
+  totalRequests: number
+  successfulRequests: number
+  failedRequests: number
+  averageLatency: number
+  minLatency: number
+  maxLatency: number
+  requestsPerSecond: number
+  totalDuration: number
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [testMessage, setTestMessage] = useState("Hello, how are you today?")
+  const [useRandomQuestions, setUseRandomQuestions] = useState(false)
+  const [concurrentRequests, setConcurrentRequests] = useState(5)
+  const [totalRequests, setTotalRequests] = useState(100)
+  const [requestInterval, setRequestInterval] = useState(100) // ms
+  const [isRunning, setIsRunning] = useState(false)
+  const [results, setResults] = useState<TestResult[]>([])
+  const [stats, setStats] = useState<TestStats | null>(null)
+  const [progress, setProgress] = useState(0)
+  const [realtimeResults, setRealtimeResults] = useState<TestResult[]>([])
+  const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set())
+  const [showQuestionsModal, setShowQuestionsModal] = useState(false)
+  
+  const { sendChat } = useChatCompletion()
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const resultsEndRef = useRef<HTMLDivElement>(null)
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const scrollToBottom = () => {
+    resultsEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [realtimeResults])
+
+  const calculateStats = (testResults: TestResult[]): TestStats => {
+    const successful = testResults.filter(r => r.success)
+    const failed = testResults.filter(r => !r.success)
+    const latencies = successful.map(r => r.duration)
+    
+    const totalDuration = testResults.length > 0 
+      ? Math.max(...testResults.map(r => r.timestamp)) - Math.min(...testResults.map(r => r.timestamp))
+      : 0
+
+    return {
+      totalRequests: testResults.length,
+      successfulRequests: successful.length,
+      failedRequests: failed.length,
+      averageLatency: latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0,
+      minLatency: latencies.length > 0 ? Math.min(...latencies) : 0,
+      maxLatency: latencies.length > 0 ? Math.max(...latencies) : 0,
+      requestsPerSecond: totalDuration > 0 ? (testResults.length / totalDuration) * 1000 : 0,
+      totalDuration
+    }
+  }
+
+  const runSingleRequest = async (requestId: string, questionIndex: number): Promise<TestResult> => {
+    const startTime = performance.now()
+    const timestamp = Date.now()
+    
+    // Get the question to use for this request
+    const currentQuestion = useRandomQuestions 
+      ? getQuestionByIndex(questionIndex)
+      : testMessage
+    
+    try {
+      const messages: ChatMessage[] = [
+        { role: "user", content: currentQuestion }
+      ]
+      
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+          messages,
+          max_tokens: 300,
+          stream: false
+        }),
+        signal: abortControllerRef.current?.signal
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      const duration = performance.now() - startTime
+      
+      return {
+        id: requestId,
+        timestamp,
+        duration,
+        success: true,
+        response: data.choices?.[0]?.message?.content || "No response",
+        requestSize: JSON.stringify({ messages }).length,
+        question: currentQuestion
+      }
+    } catch (error: any) {
+      const duration = performance.now() - startTime
+      return {
+        id: requestId,
+        timestamp,
+        duration,
+        success: false,
+        error: error.message,
+        requestSize: JSON.stringify({ messages: [{ role: "user", content: currentQuestion }] }).length,
+        question: currentQuestion
+      }
+    }
+  }
+
+  const runLoadTest = async () => {
+    setIsRunning(true)
+    setResults([])
+    setRealtimeResults([])
+    setProgress(0)
+    setStats(null)
+    
+    abortControllerRef.current = new AbortController()
+    
+    const allResults: TestResult[] = []
+    let completedRequests = 0
+    
+    try {
+      // Create batches of concurrent requests
+      const batchSize = concurrentRequests
+      const totalBatches = Math.ceil(totalRequests / batchSize)
+      
+      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        if (abortControllerRef.current?.signal.aborted) break
+        
+        const batchStart = batchIndex * batchSize
+        const batchEnd = Math.min(batchStart + batchSize, totalRequests)
+        const currentBatchSize = batchEnd - batchStart
+        
+        // Create promises for current batch
+        const batchPromises = Array.from({ length: currentBatchSize }, (_, i) => 
+          runSingleRequest(`${batchStart + i + 1}`, batchStart + i)
+        )
+        
+        // Execute batch concurrently
+        const batchResults = await Promise.allSettled(batchPromises)
+        
+        // Process results
+        const processedResults = batchResults.map((result, index) => 
+          result.status === 'fulfilled' ? result.value : {
+            id: `error-${Date.now()}-${index}`,
+            timestamp: Date.now(),
+            duration: 0,
+            success: false,
+            error: 'Request failed',
+            requestSize: 0,
+            question: useRandomQuestions ? getQuestionByIndex(batchStart + index) : testMessage
+          }
+        )
+        
+        allResults.push(...processedResults)
+        completedRequests += currentBatchSize
+        
+        // Update realtime results and progress
+        setRealtimeResults([...allResults])
+        setProgress((completedRequests / totalRequests) * 100)
+        
+        // Wait before next batch (if not the last batch)
+        if (batchIndex < totalBatches - 1 && requestInterval > 0) {
+          await new Promise(resolve => setTimeout(resolve, requestInterval))
+        }
+      }
+      
+      setResults(allResults)
+      setStats(calculateStats(allResults))
+      
+    } catch (error) {
+      console.error('Load test error:', error)
+    } finally {
+      setIsRunning(false)
+      abortControllerRef.current = null
+    }
+  }
+
+  const stopTest = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    setIsRunning(false)
+  }
+
+  const clearResults = () => {
+    setResults([])
+    setRealtimeResults([])
+    setStats(null)
+    setProgress(0)
+    setExpandedAnswers(new Set())
+  }
+
+  const toggleAnswerExpansion = (resultId: string) => {
+    const newExpanded = new Set(expandedAnswers)
+    if (newExpanded.has(resultId)) {
+      newExpanded.delete(resultId)
+    } else {
+      newExpanded.add(resultId)
+    }
+    setExpandedAnswers(newExpanded)
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <h1 className="text-3xl font-bold text-gray-900">
+            LLM API Scalability Testing Dashboard
+          </h1>
+          <p className="text-gray-600 mt-2">
+            High-frequency load testing for backend LLM API performance analysis
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Test Configuration Panel */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold mb-4">Test Configuration</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={useRandomQuestions}
+                      onChange={(e) => setUseRandomQuestions(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      Use Diverse Test Questions ({testQuestions.length} questions)
+                    </span>
+                  </label>
+                  <div className="flex gap-2 text-xs">
+                    <p className="text-gray-500">
+                      When enabled, each request will use a different question from our curated set
+                    </p>
+                    <button
+                      onClick={() => setShowQuestionsModal(true)}
+                      className="text-blue-600 hover:text-blue-800 underline whitespace-nowrap"
+                    >
+                      View Questions
+                    </button>
+                  </div>
+                </div>
+
+                {!useRandomQuestions && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Custom Test Message
+                    </label>
+                    <textarea
+                      value={testMessage}
+                      onChange={(e) => setTestMessage(e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="Enter your test message..."
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Concurrent Requests: {concurrentRequests}
+                  </label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={50}
+                    value={concurrentRequests}
+                    onChange={(e) => setConcurrentRequests(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Total Requests: {totalRequests}
+                  </label>
+                  <input
+                    type="range"
+                    min={10}
+                    max={1000}
+                    value={totalRequests}
+                    onChange={(e) => setTotalRequests(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Batch Interval (ms): {requestInterval}
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={2000}
+                    step={50}
+                    value={requestInterval}
+                    onChange={(e) => setRequestInterval(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={runLoadTest}
+                    disabled={isRunning}
+                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isRunning ? 'Running...' : 'Start Load Test'}
+                  </button>
+                  
+                  {isRunning && (
+                    <button
+                      onClick={stopTest}
+                      className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                    >
+                      Stop
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  onClick={clearResults}
+                  disabled={isRunning}
+                  className="w-full bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 disabled:opacity-50"
+                >
+                  Clear Results
+                </button>
+
+                {/* Progress Bar */}
+                {isRunning && (
+                  <div className="mt-4">
+                    <div className="flex justify-between text-sm text-gray-600 mb-1">
+                      <span>Progress</span>
+                      <span>{Math.round(progress)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Statistics Panel */}
+            {stats && (
+              <div className="bg-white rounded-lg shadow p-6 mt-6">
+                <h2 className="text-xl font-semibold mb-4">Test Statistics</h2>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div className="text-gray-600">Total Requests</div>
+                    <div className="font-semibold">{stats.totalRequests}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Success Rate</div>
+                    <div className="font-semibold text-green-600">
+                      {((stats.successfulRequests / stats.totalRequests) * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Avg Latency</div>
+                    <div className="font-semibold">{stats.averageLatency.toFixed(0)}ms</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Requests/sec</div>
+                    <div className="font-semibold">{stats.requestsPerSecond.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Min Latency</div>
+                    <div className="font-semibold">{stats.minLatency.toFixed(0)}ms</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Max Latency</div>
+                    <div className="font-semibold">{stats.maxLatency.toFixed(0)}ms</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Main Content Area */}
+          <div className="lg:col-span-2 space-y-6">
+            
+            {/* Grafana Dashboard Placeholder */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold mb-4">Monitoring Dashboard</h2>
+              <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                <div className="text-gray-500 mb-4">
+                  <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Grafana Dashboard Integration</h3>
+                <p className="text-gray-600 mb-4">
+                  Grafana dashboard will be embedded here to show real-time metrics
+                </p>
+                <div className="text-sm text-gray-500">
+                  <p>Dashboard URL: <code className="bg-gray-200 px-2 py-1 rounded">http://localhost:3001</code></p>
+                  <p className="mt-1">Status: <span className="text-yellow-600">Pending Integration</span></p>
+                </div>
+              </div>
+            </div>
+
+            {/* Real-time Results - Always Visible */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-6 border-b">
+                <h2 className="text-xl font-semibold">Real-time Test Results</h2>
+                <p className="text-gray-600 text-sm mt-1">
+                  Live feed of API responses ({realtimeResults.length} results)
+                </p>
+              </div>
+              
+              <div className="max-h-96 overflow-y-auto">
+                {realtimeResults.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">
+                    No test results yet. Start a load test to see real-time results.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-200">
+                    {realtimeResults.slice(-50).map((result) => (
+                      <div key={result.id} className="p-4 hover:bg-gray-50">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">#{result.id}</span>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              result.success 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {result.success ? 'Success' : 'Failed'}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {result.duration.toFixed(0)}ms
+                          </div>
+                        </div>
+                        
+                        {/* Question - Always visible */}
+                        <div className="text-sm text-gray-600 mb-2 bg-blue-50 p-2 rounded">
+                          <strong>Q:</strong> {result.question}
+                        </div>
+                        
+                        {/* Answer - Collapsible */}
+                        {result.success ? (
+                          <div className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <strong>A:</strong> {
+                                  expandedAnswers.has(result.id) 
+                                    ? result.response
+                                    : `${result.response?.substring(0, 100)}${result.response && result.response.length > 100 ? '...' : ''}`
+                                }
+                              </div>
+                              {result.response && result.response.length > 100 && (
+                                <button
+                                  onClick={() => toggleAnswerExpansion(result.id)}
+                                  className="ml-2 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                >
+                                  <svg 
+                                    className={`w-4 h-4 transition-transform ${expandedAnswers.has(result.id) ? 'rotate-180' : ''}`}
+                                    fill="none" 
+                                    viewBox="0 0 24 24" 
+                                    stroke="currentColor"
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                            <strong>Error:</strong> {result.error}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div ref={resultsEndRef} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Questions Modal */}
+      {showQuestionsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-semibold">Test Questions Library</h2>
+                <button
+                  onClick={() => setShowQuestionsModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-gray-600 mt-2">
+                Browse all {testQuestions.length} curated questions used for diverse testing scenarios
+              </p>
+            </div>
+            
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <div className="grid gap-4">
+                {testQuestions.map((question, index) => (
+                  <div key={index} className="p-3 bg-gray-50 rounded-lg border">
+                    <div className="flex items-start gap-3">
+                      <span className="text-sm font-medium text-gray-500 bg-white px-2 py-1 rounded">
+                        #{index + 1}
+                      </span>
+                      <p className="text-sm text-gray-700 flex-1">{question}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="p-6 border-t bg-gray-50">
+              <button
+                onClick={() => setShowQuestionsModal(false)}
+                className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  )
 }
