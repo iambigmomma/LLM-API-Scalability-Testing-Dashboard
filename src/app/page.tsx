@@ -31,6 +31,8 @@ export default function Home() {
   const [concurrentRequests, setConcurrentRequests] = useState(5)
   const [totalRequests, setTotalRequests] = useState(100)
   const [requestInterval, setRequestInterval] = useState(100) // ms
+  const [temperature, setTemperature] = useState(0.7)
+  const [maxTokens, setMaxTokens] = useState(300)
   const [isRunning, setIsRunning] = useState(false)
   const [results, setResults] = useState<TestResult[]>([])
   const [stats, setStats] = useState<TestStats | null>(null)
@@ -92,7 +94,8 @@ export default function Home() {
         body: JSON.stringify({
           model: "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
           messages,
-          max_tokens: 300,
+          max_tokens: maxTokens,
+          temperature: temperature,
           stream: false
         }),
         signal: abortControllerRef.current?.signal
@@ -229,7 +232,7 @@ export default function Home() {
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <h1 className="text-3xl font-bold text-gray-900">
-            LLM API Scalability Testing Dashboard
+            🚀 LLM API Scalability Testing Dashboard
           </h1>
           <p className="text-gray-600 mt-2">
             High-frequency load testing for backend LLM API performance analysis
@@ -243,7 +246,7 @@ export default function Home() {
           {/* Test Configuration Panel */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4">Test Configuration</h2>
+              <h2 className="text-xl font-semibold mb-4 text-gray-900">⚙️ Test Configuration</h2>
               
               <div className="space-y-4">
                 <div>
@@ -329,21 +332,75 @@ export default function Home() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    🌡️ Temperature: {temperature}
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={2}
+                    step={0.1}
+                    value={temperature}
+                    onChange={(e) => setTemperature(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>Conservative (0.0)</span>
+                    <span>Balanced (1.0)</span>
+                    <span>Creative (2.0)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    📝 Max Tokens: {maxTokens}
+                  </label>
+                  <input
+                    type="range"
+                    min={50}
+                    max={1000}
+                    step={50}
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>Short (50)</span>
+                    <span>Medium (500)</span>
+                    <span>Long (1000)</span>
+                  </div>
+                </div>
+
                 <div className="flex gap-2">
                   <button
                     onClick={runLoadTest}
                     disabled={isRunning}
-                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all duration-300 ${
+                      isRunning 
+                        ? 'animate-pulse' 
+                        : 'hover:scale-105 hover:shadow-lg active:scale-95'
+                    }`}
                   >
-                    {isRunning ? 'Running...' : 'Start Load Test'}
+                    {isRunning ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Running...
+                      </span>
+                    ) : (
+                      '🚀 Start Load Test'
+                    )}
                   </button>
                   
                   {isRunning && (
                     <button
                       onClick={stopTest}
-                      className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                      className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium transition-all duration-200 hover:scale-105"
                     >
-                      Stop
+                      ⏹️ Stop
                     </button>
                   )}
                 </div>
@@ -351,9 +408,9 @@ export default function Home() {
                 <button
                   onClick={clearResults}
                   disabled={isRunning}
-                  className="w-full bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 disabled:opacity-50"
+                  className="w-full bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 disabled:opacity-50 font-medium transition-all duration-200 hover:scale-105"
                 >
-                  Clear Results
+                  🗑️ Clear Results
                 </button>
 
                 {/* Progress Bar */}
@@ -377,11 +434,11 @@ export default function Home() {
             {/* Statistics Panel */}
             {stats && (
               <div className="bg-white rounded-lg shadow p-6 mt-6">
-                <h2 className="text-xl font-semibold mb-4">Test Statistics</h2>
+                <h2 className="text-xl font-semibold mb-4 text-gray-900">📊 Test Statistics</h2>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <div className="text-gray-600">Total Requests</div>
-                    <div className="font-semibold">{stats.totalRequests}</div>
+                    <div className="font-semibold text-gray-900">{stats.totalRequests}</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Success Rate</div>
@@ -391,19 +448,19 @@ export default function Home() {
                   </div>
                   <div>
                     <div className="text-gray-600">Avg Latency</div>
-                    <div className="font-semibold">{stats.averageLatency.toFixed(0)}ms</div>
+                    <div className="font-semibold text-gray-900">{stats.averageLatency.toFixed(0)}ms</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Requests/sec</div>
-                    <div className="font-semibold">{stats.requestsPerSecond.toFixed(2)}</div>
+                    <div className="font-semibold text-gray-900">{stats.requestsPerSecond.toFixed(2)}</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Min Latency</div>
-                    <div className="font-semibold">{stats.minLatency.toFixed(0)}ms</div>
+                    <div className="font-semibold text-gray-900">{stats.minLatency.toFixed(0)}ms</div>
                   </div>
                   <div>
                     <div className="text-gray-600">Max Latency</div>
-                    <div className="font-semibold">{stats.maxLatency.toFixed(0)}ms</div>
+                    <div className="font-semibold text-gray-900">{stats.maxLatency.toFixed(0)}ms</div>
                   </div>
                 </div>
               </div>
@@ -415,7 +472,7 @@ export default function Home() {
             
             {/* Grafana Dashboard Placeholder */}
             <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4">Monitoring Dashboard</h2>
+              <h2 className="text-xl font-semibold mb-4 text-gray-900">📈 Monitoring Dashboard</h2>
               <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                 <div className="text-gray-500 mb-4">
                   <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -436,7 +493,7 @@ export default function Home() {
             {/* Real-time Results - Always Visible */}
             <div className="bg-white rounded-lg shadow">
               <div className="p-6 border-b">
-                <h2 className="text-xl font-semibold">Real-time Test Results</h2>
+                <h2 className="text-xl font-semibold text-gray-900">⚡ Real-time Test Results</h2>
                 <p className="text-gray-600 text-sm mt-1">
                   Live feed of API responses ({realtimeResults.length} results)
                 </p>
@@ -450,16 +507,16 @@ export default function Home() {
                 ) : (
                   <div className="divide-y divide-gray-200">
                     {realtimeResults.slice(-50).map((result) => (
-                      <div key={result.id} className="p-4 hover:bg-gray-50">
+                      <div key={result.id} className="p-4 hover:bg-gray-50 transition-colors duration-150">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">#{result.id}</span>
+                            <span className="text-sm font-medium text-gray-900">#{result.id}</span>
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                               result.success 
                                 ? 'bg-green-100 text-green-800' 
                                 : 'bg-red-100 text-red-800'
                             }`}>
-                              {result.success ? 'Success' : 'Failed'}
+                              {result.success ? '✅ Success' : '❌ Failed'}
                             </span>
                           </div>
                           <div className="text-sm text-gray-500">
@@ -468,8 +525,8 @@ export default function Home() {
                         </div>
                         
                         {/* Question - Always visible */}
-                        <div className="text-sm text-gray-600 mb-2 bg-blue-50 p-2 rounded">
-                          <strong>Q:</strong> {result.question}
+                        <div className="text-sm text-gray-700 mb-2 bg-blue-50 p-2 rounded">
+                          <strong>❓ Q:</strong> {result.question}
                         </div>
                         
                         {/* Answer - Collapsible */}
@@ -477,7 +534,7 @@ export default function Home() {
                           <div className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
-                                <strong>A:</strong> {
+                                <strong>💬 A:</strong> {
                                   expandedAnswers.has(result.id) 
                                     ? result.response
                                     : `${result.response?.substring(0, 100)}${result.response && result.response.length > 100 ? '...' : ''}`
@@ -486,10 +543,10 @@ export default function Home() {
                               {result.response && result.response.length > 100 && (
                                 <button
                                   onClick={() => toggleAnswerExpansion(result.id)}
-                                  className="ml-2 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                  className="ml-2 text-gray-400 hover:text-gray-600 flex-shrink-0 transition-colors duration-150"
                                 >
                                   <svg 
-                                    className={`w-4 h-4 transition-transform ${expandedAnswers.has(result.id) ? 'rotate-180' : ''}`}
+                                    className={`w-4 h-4 transition-transform duration-200 ${expandedAnswers.has(result.id) ? 'rotate-180' : ''}`}
                                     fill="none" 
                                     viewBox="0 0 24 24" 
                                     stroke="currentColor"
@@ -502,7 +559,7 @@ export default function Home() {
                           </div>
                         ) : (
                           <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
-                            <strong>Error:</strong> {result.error}
+                            <strong>⚠️ Error:</strong> {result.error}
                           </div>
                         )}
                       </div>
@@ -522,10 +579,10 @@ export default function Home() {
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
             <div className="p-6 border-b">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-semibold">Test Questions Library</h2>
+                <h2 className="text-2xl font-semibold text-gray-900">📚 Test Questions Library</h2>
                 <button
                   onClick={() => setShowQuestionsModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 transition-colors duration-150"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -540,7 +597,7 @@ export default function Home() {
             <div className="p-6 overflow-y-auto max-h-[60vh]">
               <div className="grid gap-4">
                 {testQuestions.map((question, index) => (
-                  <div key={index} className="p-3 bg-gray-50 rounded-lg border">
+                  <div key={index} className="p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors duration-150">
                     <div className="flex items-start gap-3">
                       <span className="text-sm font-medium text-gray-500 bg-white px-2 py-1 rounded">
                         #{index + 1}
@@ -555,7 +612,7 @@ export default function Home() {
             <div className="p-6 border-t bg-gray-50">
               <button
                 onClick={() => setShowQuestionsModal(false)}
-                className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-medium transition-all duration-200 hover:scale-105"
               >
                 Close
               </button>
