@@ -9,7 +9,7 @@ interface GrafanaDashboardProps {
 }
 
 export default function GrafanaDashboard({ 
-  dashboardUrl = "http://localhost:3001", 
+  dashboardUrl = "http://165.227.40.179:3000/d/llm-worker-metrics/llm-worker-metrics?orgId=1&from=now-5m&to=now&timezone=browser&var-component=VllmWorker&var-endpoint=load_metrics&refresh=2s&kiosk", 
   height = "600px",
   width = "100%",
   className = ""
@@ -30,7 +30,7 @@ export default function GrafanaDashboard({
   return (
     <div className={`relative ${className}`}>
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg z-10">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
             <p className="text-gray-600">Loading Grafana Dashboard...</p>
@@ -47,14 +47,17 @@ export default function GrafanaDashboard({
           </div>
           <h3 className="text-lg font-medium text-red-800 mb-2">Dashboard Unavailable</h3>
           <p className="text-red-600 mb-4">
-            Unable to load Grafana dashboard. Please ensure Grafana is running on port 3001.
+            Unable to load Grafana dashboard. Please ensure Grafana is accessible at {dashboardUrl}.
           </p>
+          <div className="text-sm text-gray-600 mb-4">
+            <p>Dashboard URL: <code className="bg-gray-200 px-2 py-1 rounded text-xs">{dashboardUrl}</code></p>
+          </div>
           <button 
             onClick={() => {
               setHasError(false)
               setIsLoading(true)
             }}
-            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors duration-200"
           >
             Retry
           </button>
@@ -68,9 +71,9 @@ export default function GrafanaDashboard({
         frameBorder="0"
         onLoad={handleLoad}
         onError={handleError}
-        className={`rounded-lg ${isLoading || hasError ? 'hidden' : 'block'}`}
-        title="Grafana Dashboard"
-        sandbox="allow-same-origin allow-scripts allow-forms"
+        className={`rounded-lg border ${isLoading || hasError ? 'hidden' : 'block'}`}
+        title="Grafana LLM Worker Metrics Dashboard"
+        allow="fullscreen"
       />
     </div>
   )

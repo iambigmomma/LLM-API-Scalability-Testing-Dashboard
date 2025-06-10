@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from "react"
 import { useChatCompletion, ChatMessage } from "../hooks/useChatCompletion"
 import { getQuestionByIndex, testQuestions } from "../data/testQuestions"
+import GrafanaDashboard from "../components/GrafanaDashboard"
 
 interface TestResult {
   id: string
@@ -506,7 +507,7 @@ export default function Home() {
                 </p>
               </div>
               
-              <div className="h-203 overflow-y-auto">
+              <div className="h-240 overflow-y-auto">
                 {realtimeResults.length === 0 ? (
                   <div className="p-6 text-center text-gray-500">
                     No test results yet. Start a load test to see real-time results.
@@ -583,21 +584,7 @@ export default function Home() {
         <div className="mt-6">
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold mb-4 text-gray-900">📈 Monitoring Dashboard</h2>
-            <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-              <div className="text-gray-500 mb-4">
-                <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Grafana Dashboard Integration</h3>
-              <p className="text-gray-600 mb-4">
-                Grafana dashboard will be embedded here to show real-time metrics
-              </p>
-              <div className="text-sm text-gray-500">
-                <p>Dashboard URL: <code className="bg-gray-200 px-2 py-1 rounded">http://localhost:3001</code></p>
-                <p className="mt-1">Status: <span className="text-yellow-600">Pending Integration</span></p>
-              </div>
-            </div>
+            <GrafanaDashboard />
           </div>
         </div>
       </div>
