@@ -20,16 +20,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const data = await response.json()
-    
-    // Return the response with CORS headers
-    return NextResponse.json(data, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    })
+    // Check if streaming is requested
+    if (body.stream) {
+      // Return streaming response
+      return new NextResponse(response.body, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        },
+      })
+    } else {
+      // Return regular JSON response
+      const data = await response.json()
+      return NextResponse.json(data, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        },
+      })
+    }
   } catch (error: any) {
     console.error('Proxy API error:', error)
     return NextResponse.json(

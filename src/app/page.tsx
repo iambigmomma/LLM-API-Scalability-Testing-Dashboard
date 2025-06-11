@@ -8,11 +8,13 @@ interface TestResult {
   id: string
   timestamp: number
   duration: number
+  ttft: number // Time to First Token
   success: boolean
   error?: string
   response?: string
   requestSize: number
   question: string
+  tokensReceived?: number
 }
 
 interface TestStats {
@@ -20,15 +22,20 @@ interface TestStats {
   successfulRequests: number
   failedRequests: number
   averageLatency: number
+  averageTTFT: number
   minLatency: number
   maxLatency: number
+  minTTFT: number
+  maxTTFT: number
   requestsPerSecond: number
   totalDuration: number
+  averageTokensPerSecond?: number
 }
 
 export default function Home() {
   const [testMessage, setTestMessage] = useState("Hello, how are you today?")
   const [useRandomQuestions, setUseRandomQuestions] = useState(false)
+  const [useStreaming, setUseStreaming] = useState(true)
   const [concurrentRequests, setConcurrentRequests] = useState(5)
   const [totalRequests, setTotalRequests] = useState(100)
   const [requestInterval, setRequestInterval] = useState(100) // ms
@@ -44,40 +51,42 @@ export default function Home() {
   
   const { sendChat } = useChatCompletion()
   const abortControllerRef = useRef<AbortController | null>(null)
-  const resultsEndRef = useRef<HTMLDivElement>(null)
-
-  const scrollToBottom = () => {
-    resultsEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [realtimeResults])
 
   const calculateStats = (testResults: TestResult[]): TestStats => {
     const successful = testResults.filter(r => r.success)
     const failed = testResults.filter(r => !r.success)
     const latencies = successful.map(r => r.duration)
+    const ttfts = successful.map(r => r.ttft).filter(t => t > 0)
     
     const totalDuration = testResults.length > 0 
       ? Math.max(...testResults.map(r => r.timestamp)) - Math.min(...testResults.map(r => r.timestamp))
       : 0
+
+    const totalTokens = successful.reduce((sum, r) => sum + (r.tokensReceived || 0), 0)
+    const totalResponseTime = successful.reduce((sum, r) => sum + r.duration, 0)
 
     return {
       totalRequests: testResults.length,
       successfulRequests: successful.length,
       failedRequests: failed.length,
       averageLatency: latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0,
+      averageTTFT: ttfts.length > 0 ? ttfts.reduce((a, b) => a + b, 0) / ttfts.length : 0,
       minLatency: latencies.length > 0 ? Math.min(...latencies) : 0,
       maxLatency: latencies.length > 0 ? Math.max(...latencies) : 0,
+      minTTFT: ttfts.length > 0 ? Math.min(...ttfts) : 0,
+      maxTTFT: ttfts.length > 0 ? Math.max(...ttfts) : 0,
       requestsPerSecond: totalDuration > 0 ? (testResults.length / totalDuration) * 1000 : 0,
-      totalDuration
+      totalDuration,
+      averageTokensPerSecond: totalResponseTime > 0 ? (totalTokens / totalResponseTime) * 1000 : 0
     }
   }
 
   const runSingleRequest = async (requestId: string, questionIndex: number): Promise<TestResult> => {
     const startTime = performance.now()
     const timestamp = Date.now()
+    let ttftTime = 0
+    let tokensReceived = 0
+    let firstTokenReceived = false
     
     // Get the question to use for this request
     const currentQuestion = useRandomQuestions 
@@ -97,7 +106,7 @@ export default function Home() {
           messages,
           max_tokens: maxTokens,
           temperature: temperature,
-          stream: false
+          stream: useStreaming
         }),
         signal: abortControllerRef.current?.signal
       })
@@ -107,17 +116,60 @@ export default function Home() {
         throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
       }
 
-      const data = await response.json()
+      let fullResponse = ""
+      
+      if (response.body) {
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            
+            const chunk = decoder.decode(value, { stream: true })
+            const lines = chunk.split('\n')
+            
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6)
+                if (data === '[DONE]') continue
+                
+                try {
+                  const parsed = JSON.parse(data)
+                  const content = parsed.choices?.[0]?.delta?.content
+                  
+                  if (content) {
+                    if (!firstTokenReceived) {
+                      ttftTime = performance.now() - startTime
+                      firstTokenReceived = true
+                    }
+                    fullResponse += content
+                    tokensReceived++
+                  }
+                } catch (e) {
+                  // Skip invalid JSON lines
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock()
+        }
+      }
+      
       const duration = performance.now() - startTime
       
       return {
         id: requestId,
         timestamp,
         duration,
+        ttft: ttftTime,
         success: true,
-        response: data.choices?.[0]?.message?.content || "No response",
+        response: fullResponse || "No response",
         requestSize: JSON.stringify({ messages }).length,
-        question: currentQuestion
+        question: currentQuestion,
+        tokensReceived
       }
     } catch (error: any) {
       const duration = performance.now() - startTime
@@ -125,10 +177,12 @@ export default function Home() {
         id: requestId,
         timestamp,
         duration,
+        ttft: 0,
         success: false,
         error: error.message,
         requestSize: JSON.stringify({ messages: [{ role: "user", content: currentQuestion }] }).length,
-        question: currentQuestion
+        question: currentQuestion,
+        tokensReceived: 0
       }
     }
   }
@@ -171,10 +225,12 @@ export default function Home() {
             id: `error-${Date.now()}-${index}`,
             timestamp: Date.now(),
             duration: 0,
+            ttft: 0,
             success: false,
             error: 'Request failed',
             requestSize: 0,
-            question: useRandomQuestions ? getQuestionByIndex(batchStart + index) : testMessage
+            question: useRandomQuestions ? getQuestionByIndex(batchStart + index) : testMessage,
+            tokensReceived: 0
           }
         )
         
@@ -273,6 +329,23 @@ export default function Home() {
                       View Questions
                     </button>
                   </div>
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={useStreaming}
+                      onChange={(e) => setUseStreaming(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      Enable Streaming & TTFT Measurement
+                    </span>
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    When enabled, measures Time-to-First-Token (TTFT) for better performance insights
+                  </p>
                 </div>
 
                 <div>
@@ -380,23 +453,34 @@ export default function Home() {
                   <button
                     onClick={runLoadTest}
                     disabled={isRunning}
-                    className={`flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all duration-300 ${
+                    className={`relative flex-1 overflow-hidden bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all duration-300 ${
                       isRunning 
-                        ? 'animate-pulse' 
+                        ? '' 
                         : 'hover:scale-105 hover:shadow-lg active:scale-95'
                     }`}
                   >
-                    {isRunning ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Running...
-                      </span>
-                    ) : (
-                      '🚀 Start Load Test'
+                    {/* Progress bar background */}
+                    {isRunning && (
+                      <div 
+                        className="absolute inset-0 bg-blue-800 transition-all duration-300 ease-out"
+                        style={{ width: `${progress}%` }}
+                      />
                     )}
+                    
+                    {/* Button content */}
+                    <span className="relative z-10 flex items-center justify-center gap-2">
+                      {isRunning ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Running... {Math.round(progress)}%
+                        </>
+                      ) : (
+                        '🚀 Start Load Test'
+                      )}
+                    </span>
                   </button>
                   
                   {isRunning && (
@@ -416,22 +500,6 @@ export default function Home() {
                 >
                   🗑️ Clear Results
                 </button>
-
-                {/* Progress Bar */}
-                {isRunning && (
-                  <div className="mt-4">
-                    <div className="flex justify-between text-sm text-gray-600 mb-1">
-                      <span>Progress</span>
-                      <span>{Math.round(progress)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${progress}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -451,20 +519,34 @@ export default function Home() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-gray-600">Avg Latency</div>
+                    <div className="text-gray-600">Avg TTFT</div>
+                    <div className="font-semibold text-blue-600">{stats.averageTTFT.toFixed(0)}ms</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Avg Total Latency</div>
                     <div className="font-semibold text-gray-900">{stats.averageLatency.toFixed(0)}ms</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Min/Max TTFT</div>
+                    <div className="font-semibold text-blue-600">
+                      {stats.minTTFT.toFixed(0)}ms / {stats.maxTTFT.toFixed(0)}ms
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Min/Max Latency</div>
+                    <div className="font-semibold text-gray-900">
+                      {stats.minLatency.toFixed(0)}ms / {stats.maxLatency.toFixed(0)}ms
+                    </div>
                   </div>
                   <div>
                     <div className="text-gray-600">Requests/sec</div>
                     <div className="font-semibold text-gray-900">{stats.requestsPerSecond.toFixed(2)}</div>
                   </div>
                   <div>
-                    <div className="text-gray-600">Min Latency</div>
-                    <div className="font-semibold text-gray-900">{stats.minLatency.toFixed(0)}ms</div>
-                  </div>
-                  <div>
-                    <div className="text-gray-600">Max Latency</div>
-                    <div className="font-semibold text-gray-900">{stats.maxLatency.toFixed(0)}ms</div>
+                    <div className="text-gray-600">Tokens/sec</div>
+                    <div className="font-semibold text-purple-600">
+                      {stats.averageTokensPerSecond ? stats.averageTokensPerSecond.toFixed(1) : 'N/A'}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -478,7 +560,19 @@ export default function Home() {
                     <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                   <div>
-                    <div className="text-gray-600">Avg Latency</div>
+                    <div className="text-gray-600">Avg TTFT</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Avg Total Latency</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Min/Max TTFT</div>
+                    <div className="font-semibold text-gray-400">N/A</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Min/Max Latency</div>
                     <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                   <div>
@@ -486,11 +580,7 @@ export default function Home() {
                     <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                   <div>
-                    <div className="text-gray-600">Min Latency</div>
-                    <div className="font-semibold text-gray-400">N/A</div>
-                  </div>
-                  <div>
-                    <div className="text-gray-600">Max Latency</div>
+                    <div className="text-gray-600">Tokens/sec</div>
                     <div className="font-semibold text-gray-400">N/A</div>
                   </div>
                 </div>
@@ -510,7 +600,7 @@ export default function Home() {
                 </p>
               </div>
               
-              <div className="h-240 overflow-y-auto">
+              <div className="h-272 overflow-y-auto">
                 {realtimeResults.length === 0 ? (
                   <div className="p-6 text-center text-gray-500">
                     No test results yet. Start a load test to see real-time results.
@@ -529,9 +619,17 @@ export default function Home() {
                             }`}>
                               {result.success ? '✅ Success' : '❌ Failed'}
                             </span>
+                            {result.success && result.ttft > 0 && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                TTFT: {result.ttft.toFixed(0)}ms
+                              </span>
+                            )}
                           </div>
-                          <div className="text-sm text-gray-500">
-                            {result.duration.toFixed(0)}ms
+                          <div className="text-sm text-gray-500 flex gap-2">
+                            {result.success && result.tokensReceived && (
+                              <span>📝 {result.tokensReceived} tokens</span>
+                            )}
+                            <span>⏱️ {result.duration.toFixed(0)}ms</span>
                           </div>
                         </div>
                         
@@ -575,7 +673,6 @@ export default function Home() {
                         )}
                       </div>
                     ))}
-                    <div ref={resultsEndRef} />
                   </div>
                 )}
               </div>
