@@ -69,14 +69,14 @@ docker restart grafana
    ```
 
 2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+```
 
 3. **Configure your server IP** (see Configuration section above)
 
 4. **Start the development server**:
-   ```bash
+```bash
    npm run dev -- --port 3050
    ```
 

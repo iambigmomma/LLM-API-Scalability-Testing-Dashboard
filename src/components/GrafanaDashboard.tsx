@@ -1,6 +1,5 @@
 "use client"
-import { useState, useEffect } from 'react'
-import { getGrafanaDashboardUrl, getGrafanaBaseUrl } from '../config/dashboard-config'
+import { useState } from 'react'
 
 interface GrafanaDashboardProps {
   dashboardUrl?: string
@@ -11,7 +10,7 @@ interface GrafanaDashboardProps {
 }
 
 export default function GrafanaDashboard({ 
-  dashboardUrl = getGrafanaDashboardUrl(true), 
+  dashboardUrl, 
   height = "600px",
   width = "100%",
   className = "",
@@ -19,6 +18,23 @@ export default function GrafanaDashboard({
 }: GrafanaDashboardProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
+
+  // If no dashboard URL is provided, don't render anything
+  if (!dashboardUrl) {
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+        <div className="text-gray-400 mb-2">
+          <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v4" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No Monitoring Dashboard</h3>
+        <p className="text-gray-600">
+          Configure a Grafana dashboard URL in settings to enable real-time monitoring.
+        </p>
+      </div>
+    )
+  }
 
   const handleLoad = () => {
     setIsLoading(false)
@@ -31,7 +47,7 @@ export default function GrafanaDashboard({
   }
 
   const openInNewTab = () => {
-    window.open(getGrafanaDashboardUrl(false), '_blank')
+    window.open(dashboardUrl, '_blank')
   }
 
   return (
@@ -55,17 +71,6 @@ export default function GrafanaDashboard({
               </svg>
               Open in Grafana
             </button>
-            {/* <a
-              href={getGrafanaBaseUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 px-3 py-1 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-md transition-colors duration-200"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
-              Grafana Home
-            </a> */}
           </div>
         </div>
       )}
@@ -81,38 +86,27 @@ export default function GrafanaDashboard({
       
       {hasError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <div className="text-red-500 mb-2">
-            <svg className="mx-auto h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="text-red-500 mb-4">
+            <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-red-800 mb-2">Dashboard Unavailable</h3>
+          
+          <h3 className="text-lg font-medium text-red-800 mb-2">Dashboard Loading Failed</h3>
           <p className="text-red-600 mb-4">
-            Unable to load Grafana dashboard. Please ensure Grafana is accessible.
+            Unable to load the Grafana dashboard. Please check your dashboard URL and network connection.
           </p>
+          
           <div className="text-sm text-gray-600 mb-4">
             <p>Dashboard URL: <code className="bg-gray-200 px-2 py-1 rounded text-xs break-all">{dashboardUrl}</code></p>
-            <p className="mt-2">Grafana Home: <code className="bg-gray-200 px-2 py-1 rounded text-xs">{getGrafanaBaseUrl()}</code></p>
           </div>
-          <div className="flex gap-2 justify-center">
-            <button 
-              onClick={() => {
-                setHasError(false)
-                setIsLoading(true)
-              }}
-              className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors duration-200"
-            >
-              Retry
-            </button>
-            <a
-              href={getGrafanaBaseUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-200"
-            >
-              Open Grafana
-            </a>
-          </div>
+          
+          <button
+            onClick={openInNewTab}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-200"
+          >
+            🔗 Open in New Tab
+          </button>
         </div>
       )}
 
@@ -124,7 +118,7 @@ export default function GrafanaDashboard({
         onLoad={handleLoad}
         onError={handleError}
         className={`rounded-lg border ${isLoading || hasError ? 'hidden' : 'block'}`}
-        title="Grafana LLM Worker Metrics Dashboard"
+        title="Grafana Dashboard"
         allow="fullscreen"
       />
     </div>

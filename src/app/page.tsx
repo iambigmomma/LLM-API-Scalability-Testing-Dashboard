@@ -32,7 +32,25 @@ interface TestStats {
   averageTokensPerSecond?: number
 }
 
+interface ApiConfig {
+  endpoint: string
+  apiKey: string
+  grafanaUrl: string
+  model: string
+}
+
 export default function Home() {
+  // Configuration state
+  const [isConfigured, setIsConfigured] = useState(false)
+  const [apiConfig, setApiConfig] = useState<ApiConfig>({
+    endpoint: '',
+    apiKey: '',
+    grafanaUrl: '',
+    model: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B'
+  })
+  const [isValidating, setIsValidating] = useState(false)
+
+  // Test configuration state
   const [testMessage, setTestMessage] = useState("Hello, how are you today?")
   const [useRandomQuestions, setUseRandomQuestions] = useState(false)
   const [useStreaming, setUseStreaming] = useState(true)
@@ -51,6 +69,192 @@ export default function Home() {
   
   const { sendChat } = useChatCompletion()
   const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Load saved configuration on component mount
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('llm-test-config')
+    if (savedConfig) {
+      try {
+        const config = JSON.parse(savedConfig)
+        setApiConfig(config)
+        setIsConfigured(true)
+      } catch (error) {
+        console.error('Failed to load saved configuration:', error)
+      }
+    }
+  }, [])
+
+  const validateAndSaveConfig = async () => {
+    setIsValidating(true)
+    
+    try {
+      // Basic validation
+      if (!apiConfig.endpoint && !apiConfig.apiKey) {
+        alert('Please provide at least an API Key or an Endpoint')
+        return
+      }
+
+      // Test API connection
+      const testResponse = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: apiConfig.model,
+          messages: [{ role: "user", content: "Hello" }],
+          max_tokens: 10,
+          temperature: 0.1,
+          stream: false,
+          // Pass config for API route to use
+          config: apiConfig
+        })
+      })
+
+      if (!testResponse.ok) {
+        throw new Error(`API test failed: ${testResponse.status}`)
+      }
+
+      // Save configuration
+      localStorage.setItem('llm-test-config', JSON.stringify(apiConfig))
+      setIsConfigured(true)
+      
+    } catch (error: any) {
+      alert(`Configuration validation failed: ${error.message}`)
+    } finally {
+      setIsValidating(false)
+    }
+  }
+
+  const resetConfiguration = () => {
+    localStorage.removeItem('llm-test-config')
+    setIsConfigured(false)
+    setApiConfig({
+      endpoint: '',
+      apiKey: '',
+      grafanaUrl: '',
+      model: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B'
+    })
+  }
+
+  // Configuration Setup Page
+  if (!isConfigured) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-2xl">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-black mb-2">
+              🚀 LLM API Testing Setup
+            </h1>
+            <p className="text-black">
+              Configure your backend API and monitoring dashboard
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-black mb-2">
+                🔗 Backend API Endpoint (Optional)
+              </label>
+              <input
+                type="url"
+                value={apiConfig.endpoint}
+                onChange={(e) => setApiConfig(prev => ({ ...prev, endpoint: e.target.value }))}
+                placeholder="https://api.openai.com/v1/chat/completions"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+              />
+              <p className="text-xs text-gray-600 mt-1">
+                The API endpoint URL. Leave empty to use OpenAI's default endpoint.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-black mb-2">
+                🔑 API Key (Optional)
+              </label>
+              <input
+                type="password"
+                value={apiConfig.apiKey}
+                onChange={(e) => setApiConfig(prev => ({ ...prev, apiKey: e.target.value }))}
+                placeholder="sk-... or your API key"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+              />
+              <p className="text-xs text-gray-600 mt-1">
+                Your API authentication key. Required for most services like OpenAI.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-black mb-2">
+                🤖 Model Name
+              </label>
+              <input
+                type="text"
+                value={apiConfig.model}
+                onChange={(e) => setApiConfig(prev => ({ ...prev, model: e.target.value }))}
+                placeholder="gpt-3.5-turbo, deepseek-ai/DeepSeek-R1-Distill-Llama-8B, etc."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+              />
+              <p className="text-xs text-gray-600 mt-1">
+                The model identifier to use for testing
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-black mb-2">
+                📊 Grafana Dashboard URL (Optional)
+              </label>
+              <input
+                type="url"
+                value={apiConfig.grafanaUrl}
+                onChange={(e) => setApiConfig(prev => ({ ...prev, grafanaUrl: e.target.value }))}
+                placeholder="https://your-grafana.com/d/dashboard-id"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+              />
+              <p className="text-xs text-gray-600 mt-1">
+                URL to your Grafana monitoring dashboard (leave empty to disable)
+              </p>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start">
+                <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <h3 className="text-sm font-medium text-blue-800 mb-1">Configuration Notes</h3>
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    <li>• For OpenAI: Only API Key is required, endpoint will use default</li>
+                    <li>• For custom endpoints: Provide both endpoint and API key if needed</li>
+                    <li>• Your configuration will be saved locally in browser storage</li>
+                    <li>• You can change these settings later from the dashboard</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={validateAndSaveConfig}
+              disabled={isValidating || (!apiConfig.endpoint && !apiConfig.apiKey)}
+              className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+            >
+              {isValidating ? (
+                <>
+                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Validating Configuration...
+                </>
+              ) : (
+                <>
+                  ✅ Save & Continue to Dashboard
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const calculateStats = (testResults: TestResult[]): TestStats => {
     const successful = testResults.filter(r => r.success)
@@ -102,11 +306,15 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+          model: apiConfig.model,
           messages,
           max_tokens: maxTokens,
           temperature: temperature,
-          stream: useStreaming
+          stream: useStreaming,
+          config: {
+            endpoint: apiConfig.endpoint,
+            apiKey: apiConfig.apiKey
+          }
         }),
         signal: abortControllerRef.current?.signal
       })
@@ -288,12 +496,40 @@ export default function Home() {
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div>
           <h1 className="text-3xl font-bold text-gray-900">
             🚀 LLM API Scalability Testing Dashboard
           </h1>
           <p className="text-gray-600 mt-2">
             High-frequency load testing for backend LLM API performance analysis
           </p>
+              <div className="flex items-center gap-4 mt-2 text-sm">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  🔗 Connected: {apiConfig.endpoint ? new URL(apiConfig.endpoint).hostname : 'OpenAI (default)'}
+                </span>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  🤖 Model: {apiConfig.model}
+                </span>
+                {apiConfig.apiKey && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    🔑 API Key: Configured
+                  </span>
+                )}
+                {apiConfig.grafanaUrl && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    📊 Monitoring: Enabled
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={resetConfiguration}
+              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 font-medium transition-all duration-200 hover:scale-105 flex items-center gap-2"
+            >
+              ⚙️ Reconfigure
+            </button>
+          </div>
         </div>
       </div>
 
@@ -348,23 +584,23 @@ export default function Home() {
                   </p>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Custom Test Message
-                  </label>
-                  <textarea
-                    value={testMessage}
-                    onChange={(e) => setTestMessage(e.target.value)}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Custom Test Message
+                    </label>
+                    <textarea
+                      value={testMessage}
+                      onChange={(e) => setTestMessage(e.target.value)}
                     disabled={useRandomQuestions}
                     className={`w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                       useRandomQuestions 
                         ? 'bg-gray-100 text-gray-500 cursor-not-allowed' 
                         : 'bg-white text-gray-900'
                     }`}
-                    rows={3}
+                      rows={3}
                     placeholder={useRandomQuestions ? "Disabled when using diverse test questions" : "Enter your test message..."}
-                  />
-                </div>
+                    />
+                  </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -469,17 +705,17 @@ export default function Home() {
                     
                     {/* Button content */}
                     <span className="relative z-10 flex items-center justify-center gap-2">
-                      {isRunning ? (
+                    {isRunning ? (
                         <>
-                          <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
+                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
                           Running... {Math.round(progress)}%
                         </>
-                      ) : (
-                        '🚀 Start Load Test'
-                      )}
+                    ) : (
+                      '🚀 Start Load Test'
+                    )}
                     </span>
                   </button>
                   
@@ -504,8 +740,8 @@ export default function Home() {
             </div>
 
             {/* Statistics Panel - Always visible */}
-            <div className="bg-white rounded-lg shadow p-6 mt-6">
-              <h2 className="text-xl font-semibold mb-4 text-gray-900">📊 Test Statistics</h2>
+              <div className="bg-white rounded-lg shadow p-6 mt-6">
+                <h2 className="text-xl font-semibold mb-4 text-gray-900">📊 Test Statistics</h2>
               {stats ? (
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
@@ -585,12 +821,12 @@ export default function Home() {
                   </div>
                 </div>
               )}
-            </div>
+              </div>
           </div>
 
           {/* Main Content Area */}
           <div className="lg:col-span-2 space-y-6">
-            
+
             {/* Real-time Results - Always Visible */}
             <div className="bg-white rounded-lg shadow h-fit">
               <div className="p-6 border-b">
@@ -680,13 +916,15 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Monitoring Dashboard - Moved to bottom */}
-        <div className="mt-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4 text-gray-900">📈 Monitoring Dashboard</h2>
-            <GrafanaDashboard />
+        {/* Monitoring Dashboard - Conditionally rendered */}
+        {apiConfig.grafanaUrl && (
+          <div className="mt-6">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold mb-4 text-gray-900">📈 Monitoring Dashboard</h2>
+              <GrafanaDashboard dashboardUrl={apiConfig.grafanaUrl} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Questions Modal */}
