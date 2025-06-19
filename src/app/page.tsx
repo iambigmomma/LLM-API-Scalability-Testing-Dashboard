@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect } from "react"
-import { useChatCompletion, ChatMessage } from "../hooks/useChatCompletion"
+import { ChatMessage } from "../hooks/useChatCompletion"
 import { getQuestionByIndex, testQuestions } from "../data/testQuestions"
 import GrafanaDashboard from "../components/GrafanaDashboard"
 
@@ -60,14 +60,12 @@ export default function Home() {
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(300)
   const [isRunning, setIsRunning] = useState(false)
-  const [results, setResults] = useState<TestResult[]>([])
   const [stats, setStats] = useState<TestStats | null>(null)
   const [progress, setProgress] = useState(0)
   const [realtimeResults, setRealtimeResults] = useState<TestResult[]>([])
   const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set())
   const [showQuestionsModal, setShowQuestionsModal] = useState(false)
   
-  const { sendChat } = useChatCompletion()
   const abortControllerRef = useRef<AbortController | null>(null)
 
   // Load saved configuration on component mount
@@ -117,8 +115,9 @@ export default function Home() {
       localStorage.setItem('llm-test-config', JSON.stringify(apiConfig))
       setIsConfigured(true)
       
-    } catch (error: any) {
-      alert(`Configuration validation failed: ${error.message}`)
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      alert(`Configuration validation failed: ${errorMessage}`)
     } finally {
       setIsValidating(false)
     }
@@ -162,7 +161,7 @@ export default function Home() {
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
               />
               <p className="text-xs text-gray-600 mt-1">
-                The API endpoint URL. Leave empty to use OpenAI's default endpoint.
+                The API endpoint URL. Leave empty to use OpenAI&apos;s default endpoint.
               </p>
             </div>
 
@@ -326,44 +325,53 @@ export default function Home() {
 
       let fullResponse = ""
       
-      if (response.body) {
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            
-            const chunk = decoder.decode(value, { stream: true })
-            const lines = chunk.split('\n')
-            
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6)
-                if (data === '[DONE]') continue
-                
-                try {
-                  const parsed = JSON.parse(data)
-                  const content = parsed.choices?.[0]?.delta?.content
+      if (useStreaming) {
+        // Handle streaming response
+        if (response.body) {
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              
+              const chunk = decoder.decode(value, { stream: true })
+              const lines = chunk.split('\n')
+              
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const data = line.slice(6)
+                  if (data === '[DONE]') continue
                   
-                  if (content) {
-                    if (!firstTokenReceived) {
-                      ttftTime = performance.now() - startTime
-                      firstTokenReceived = true
+                  try {
+                    const parsed = JSON.parse(data)
+                    const content = parsed.choices?.[0]?.delta?.content
+                    
+                    if (content) {
+                      if (!firstTokenReceived) {
+                        ttftTime = performance.now() - startTime
+                        firstTokenReceived = true
+                      }
+                      fullResponse += content
+                      tokensReceived++
                     }
-                    fullResponse += content
-                    tokensReceived++
+                  } catch {
+                    // Skip invalid JSON lines
                   }
-                } catch (e) {
-                  // Skip invalid JSON lines
                 }
               }
             }
+          } finally {
+            reader.releaseLock()
           }
-        } finally {
-          reader.releaseLock()
         }
+      } else {
+        // Handle non-streaming response
+        const data = await response.json()
+        ttftTime = performance.now() - startTime
+        fullResponse = data.choices?.[0]?.message?.content || ""
+        tokensReceived = data.usage?.completion_tokens || 0
       }
       
       const duration = performance.now() - startTime
@@ -379,15 +387,16 @@ export default function Home() {
         question: currentQuestion,
         tokensReceived
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       const duration = performance.now() - startTime
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       return {
         id: requestId,
         timestamp,
         duration,
         ttft: 0,
         success: false,
-        error: error.message,
+        error: errorMessage,
         requestSize: JSON.stringify({ messages: [{ role: "user", content: currentQuestion }] }).length,
         question: currentQuestion,
         tokensReceived: 0
@@ -397,7 +406,6 @@ export default function Home() {
 
   const runLoadTest = async () => {
     setIsRunning(true)
-    setResults([])
     setRealtimeResults([])
     setProgress(0)
     setStats(null)
@@ -455,7 +463,7 @@ export default function Home() {
         }
       }
       
-      setResults(allResults)
+      setRealtimeResults(allResults)
       setStats(calculateStats(allResults))
       
     } catch (error) {
@@ -474,7 +482,6 @@ export default function Home() {
   }
 
   const clearResults = () => {
-    setResults([])
     setRealtimeResults([])
     setStats(null)
     setProgress(0)
